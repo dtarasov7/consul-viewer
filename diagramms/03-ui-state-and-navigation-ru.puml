@@ -1,0 +1,50 @@
+@startuml
+title Consul Viewer TUI - Состояние UI и навигация
+
+skinparam shadowing false
+
+state "Текущий раздел" as Section
+state "Текущий фокус" as Focus
+state "Режим раздела" as Mode
+state "Выбор" as Selection
+state "Стек истории" as History
+state "Фильтры" as Filters
+state "Сортировка" as Sort
+state "Состояние popup" as Popup
+
+[*] --> Section
+[*] --> Focus
+[*] --> Mode
+[*] --> Selection
+[*] --> History
+[*] --> Filters
+[*] --> Sort
+[*] --> Popup
+
+Section --> Mode : list / instances / links
+Section --> Selection : id выбранной строки
+Section --> Filters : text + status + instance filters
+Section --> Sort : сортировка для текущего вида
+
+Focus --> Section : Tab / Shift+Tab
+Focus --> Selection : Up / Down
+Focus --> Popup : F1 / F6 / F7 / F8 / F9 / F11 / выход
+
+Selection --> Mode : Enter drill-down
+Mode --> History : сохранить прошлую позицию
+History --> Section : Backspace восстановить
+Popup --> Filters : применить фильтры
+Popup --> Sort : применить сортировку
+
+note right of Filters
+Текстовый, статусный и
+структурный фильтры инстансов
+применяются последовательно.
+end note
+
+note right of Sort
+Сортировка хранится отдельно
+для каждого видимого режима списка.
+end note
+
+@enduml

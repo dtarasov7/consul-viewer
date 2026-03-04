@@ -1,0 +1,40 @@
+@startuml
+title Consul Viewer TUI - Request and Data Flow
+
+skinparam shadowing false
+
+actor User
+participant "ConsulTuiApp" as App
+participant "Input Router" as Input
+participant "TTL Cache" as Cache
+participant "Job Queue" as Jobs
+participant "Worker Thread" as Worker
+participant "ConsulClient" as Client
+participant "Consul API" as Api
+participant "Result Queue" as Results
+participant "Render Pipeline" as Render
+
+User -> App: trigger section refresh / action
+App -> Input: interpret key or action
+Input -> Cache: lookup by job key
+
+alt cache hit and TTL valid
+  Cache --> Input: cached payload
+  Input -> App: apply cached result
+else cache miss or stale
+  Input -> Jobs: enqueue background job
+  Jobs -> Worker: dequeue job
+  Worker -> Client: execute request
+  Client -> Api: HTTP GET
+  Api --> Client: payload / error
+  Client --> Worker: parsed result
+  Worker -> Cache: store successful payload
+  Worker -> Results: publish job result
+  Results -> App: poll and consume
+end
+
+App -> Render: rebuild visible state
+Render -> App: rows + details + status text
+App --> User: updated TUI
+
+@enduml

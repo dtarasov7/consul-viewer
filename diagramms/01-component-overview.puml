@@ -1,0 +1,69 @@
+@startuml
+title Consul Viewer TUI - Component Overview
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor User
+
+package "Terminal UI" {
+  [ConsulTuiApp]
+  [Tab Bar]
+  [Items Pane]
+  [Details Pane]
+  [Status Bar]
+  [Popup Dialogs]
+}
+
+package "Application Core" {
+  [State Model]
+  [Input Router]
+  [Filter Layer]
+  [Sort Layer]
+  [Render Pipeline]
+}
+
+package "Background Processing" {
+  [Worker Thread]
+  [Job Queue]
+  [Result Queue]
+  [TTL Cache]
+}
+
+package "Data Access" {
+  [ConsulClient]
+}
+
+cloud "Consul HTTP API" {
+  [JSON Endpoints]
+  [Prometheus Metrics Endpoint]
+}
+
+User --> [ConsulTuiApp]
+[ConsulTuiApp] --> [Input Router]
+[ConsulTuiApp] --> [Render Pipeline]
+[ConsulTuiApp] --> [State Model]
+
+[Tab Bar] --> [ConsulTuiApp]
+[Items Pane] --> [ConsulTuiApp]
+[Details Pane] --> [ConsulTuiApp]
+[Status Bar] --> [ConsulTuiApp]
+[Popup Dialogs] --> [ConsulTuiApp]
+
+[Input Router] --> [State Model]
+[Input Router] --> [Job Queue]
+[Render Pipeline] --> [Filter Layer]
+[Render Pipeline] --> [Sort Layer]
+[Render Pipeline] --> [State Model]
+
+[Job Queue] --> [Worker Thread]
+[Worker Thread] --> [Result Queue]
+[Worker Thread] --> [TTL Cache]
+[Worker Thread] --> [ConsulClient]
+
+[ConsulClient] --> [JSON Endpoints]
+[ConsulClient] --> [Prometheus Metrics Endpoint]
+[Result Queue] --> [ConsulTuiApp]
+[TTL Cache] --> [ConsulTuiApp]
+
+@enduml

@@ -1,0 +1,57 @@
+@startuml
+title Consul Viewer TUI - Жизненный цикл обновления раздела
+
+skinparam shadowing false
+
+start
+
+:Пользователь меняет раздел\nили запрашивает обновление;
+:Установить section_loading = true;
+
+if (Текущий раздел?) then (Dashboard)
+  :Отправить задачу dashboard;
+elseif (Telemetry)
+  :Отправить задачу telemetry;
+elseif (Services list)
+  :Отправить задачу services_list;
+  :При необходимости загрузить\nдетали выбранного сервиса;
+elseif (Services instances)
+  :Отправить service_detail\nдля текущего сервиса;
+elseif (Nodes list)
+  :Отправить задачу nodes_list;
+  :При необходимости загрузить\nдетали выбранной ноды;
+elseif (Nodes instances)
+  :Отправить node_detail\nдля текущей ноды;
+elseif (KV)
+  :Отправить задачу kv_list;
+  :При необходимости загрузить\nдетали выбранного KV;
+elseif (Sessions)
+  :Отправить задачу sessions_list;
+elseif (ACL разделы)
+  if (ACL доступен?) then (да)
+    :Отправить задачи tokens, policies,\nroles и auth-methods;
+  else (нет)
+    :Остановить загрузку и\nпоказать сообщение ACL;
+  endif
+else (Прочее)
+  :Остановить загрузку и\nпоказать not implemented;
+endif
+
+:Опросить очередь результатов;
+if (Результат успешен?) then (да)
+  :Обновить строки/детали/кэш;
+  :По возможности сохранить выбор;
+  :Пометить раздел как fresh;
+else (нет)
+  :Сохранить последний корректный snapshot;
+  :Пометить раздел как stale;
+  :Показать ошибку в status bar и popup;
+endif
+
+:Пересобрать tab bar;
+:Пересобрать панель списка;
+:Пересобрать панель деталей;
+:Обновить строку статуса;
+stop
+
+@enduml

@@ -1,0 +1,57 @@
+@startuml
+title Consul Viewer TUI - Section Refresh Lifecycle
+
+skinparam shadowing false
+
+start
+
+:User changes section or requests refresh;
+:Set section_loading = true;
+
+if (Current section?) then (Dashboard)
+  :Submit dashboard job;
+elseif (Telemetry)
+  :Submit telemetry job;
+elseif (Services list)
+  :Submit services_list job;
+  :Maybe load selected service detail;
+elseif (Services instances)
+  :Submit service_detail for current service;
+elseif (Nodes list)
+  :Submit nodes_list job;
+  :Maybe load selected node detail;
+elseif (Nodes instances)
+  :Submit node_detail for current node;
+elseif (KV)
+  :Submit kv_list job;
+  :Maybe load selected KV detail;
+elseif (Sessions)
+  :Submit sessions_list job;
+elseif (ACL sections)
+  if (ACL available?) then (yes)
+    :Submit tokens, policies, roles,\nand auth-method jobs;
+  else (no)
+    :Stop loading and show ACL message;
+  endif
+else (Other)
+  :Stop loading and show not implemented;
+endif
+
+:Poll result queue;
+if (Result OK?) then (yes)
+  :Update section rows/details/cache;
+  :Preserve selection if possible;
+  :Mark section fresh;
+else (no)
+  :Keep last good snapshot;
+  :Mark section stale;
+  :Show error in status bar and popup;
+endif
+
+:Rebuild menu;
+:Rebuild items pane;
+:Rebuild details pane;
+:Refresh status line;
+stop
+
+@enduml

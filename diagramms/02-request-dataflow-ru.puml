@@ -1,0 +1,40 @@
+@startuml
+title Consul Viewer TUI - Поток запросов и данных
+
+skinparam shadowing false
+
+actor "Пользователь" as User
+participant "ConsulTuiApp" as App
+participant "Маршрутизация ввода" as Input
+participant "TTL кэш" as Cache
+participant "Очередь задач" as Jobs
+participant "Фоновый поток" as Worker
+participant "ConsulClient" as Client
+participant "Consul API" as Api
+participant "Очередь результатов" as Results
+participant "Конвейер отрисовки" as Render
+
+User -> App: обновление раздела / действие
+App -> Input: интерпретация клавиши или действия
+Input -> Cache: поиск по ключу задачи
+
+alt есть запись в кэше и TTL валиден
+  Cache --> Input: кэшированный payload
+  Input -> App: применить кэшированный результат
+else кэш пустой или устарел
+  Input -> Jobs: поставить задачу в очередь
+  Jobs -> Worker: взять задачу
+  Worker -> Client: выполнить запрос
+  Client -> Api: HTTP GET
+  Api --> Client: payload / ошибка
+  Client --> Worker: разобранный результат
+  Worker -> Cache: сохранить успешный payload
+  Worker -> Results: опубликовать результат
+  Results -> App: опрос и получение результата
+end
+
+App -> Render: пересобрать видимое состояние
+Render -> App: строки + детали + статус
+App --> User: обновленный TUI
+
+@enduml

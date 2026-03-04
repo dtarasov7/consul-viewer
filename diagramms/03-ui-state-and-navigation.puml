@@ -1,0 +1,49 @@
+@startuml
+title Consul Viewer TUI - UI State and Navigation
+
+skinparam shadowing false
+
+state "Current Section" as Section
+state "Current Focus" as Focus
+state "Section Mode" as Mode
+state "Selection" as Selection
+state "History Stack" as History
+state "Filters" as Filters
+state "Sort Option" as Sort
+state "Popup State" as Popup
+
+[*] --> Section
+[*] --> Focus
+[*] --> Mode
+[*] --> Selection
+[*] --> History
+[*] --> Filters
+[*] --> Sort
+[*] --> Popup
+
+Section --> Mode : list / instances / links
+Section --> Selection : selected row id
+Section --> Filters : text + status + instance filters
+Section --> Sort : per-view sorting
+
+Focus --> Section : Tab / Shift+Tab
+Focus --> Selection : Up / Down
+Focus --> Popup : F1 / F6 / F7 / F8 / F9 / F11 / exit
+
+Selection --> Mode : Enter drill-down
+Mode --> History : push previous location
+History --> Section : Backspace restore
+Popup --> Filters : apply popup filters
+Popup --> Sort : apply sort settings
+
+note right of Filters
+Text, status, and structured
+instance filters are layered.
+end note
+
+note right of Sort
+Sorting is stored separately
+for each visible list mode.
+end note
+
+@enduml

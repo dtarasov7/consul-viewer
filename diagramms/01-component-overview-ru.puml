@@ -1,0 +1,69 @@
+@startuml
+title Consul Viewer TUI - Обзор компонентов
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor "Пользователь" as User
+
+package "Терминальный UI" {
+  [ConsulTuiApp]
+  [Панель вкладок]
+  [Панель списка]
+  [Панель деталей]
+  [Строка статуса]
+  [Всплывающие окна]
+}
+
+package "Ядро приложения" {
+  [Модель состояния]
+  [Маршрутизация ввода]
+  [Слой фильтров]
+  [Слой сортировки]
+  [Конвейер отрисовки]
+}
+
+package "Фоновая обработка" {
+  [Фоновый поток]
+  [Очередь задач]
+  [Очередь результатов]
+  [TTL кэш]
+}
+
+package "Доступ к данным" {
+  [ConsulClient]
+}
+
+cloud "Consul HTTP API" {
+  [JSON endpoints]
+  [Endpoint метрик Prometheus]
+}
+
+User --> [ConsulTuiApp]
+[ConsulTuiApp] --> [Маршрутизация ввода]
+[ConsulTuiApp] --> [Конвейер отрисовки]
+[ConsulTuiApp] --> [Модель состояния]
+
+[Панель вкладок] --> [ConsulTuiApp]
+[Панель списка] --> [ConsulTuiApp]
+[Панель деталей] --> [ConsulTuiApp]
+[Строка статуса] --> [ConsulTuiApp]
+[Всплывающие окна] --> [ConsulTuiApp]
+
+[Маршрутизация ввода] --> [Модель состояния]
+[Маршрутизация ввода] --> [Очередь задач]
+[Конвейер отрисовки] --> [Слой фильтров]
+[Конвейер отрисовки] --> [Слой сортировки]
+[Конвейер отрисовки] --> [Модель состояния]
+
+[Очередь задач] --> [Фоновый поток]
+[Фоновый поток] --> [Очередь результатов]
+[Фоновый поток] --> [TTL кэш]
+[Фоновый поток] --> [ConsulClient]
+
+[ConsulClient] --> [JSON endpoints]
+[ConsulClient] --> [Endpoint метрик Prometheus]
+[Очередь результатов] --> [ConsulTuiApp]
+[TTL кэш] --> [ConsulTuiApp]
+
+@enduml
