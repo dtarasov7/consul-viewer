@@ -18,6 +18,12 @@ User -> App: trigger section refresh / action
 App -> Input: interpret key or action
 Input -> Cache: lookup by job key
 
+note right of Input
+Space/F12 update bulk selection state.
+Enter in Services/Nodes list can open
+merged instances for selected rows.
+end note
+
 alt cache hit and TTL valid
   Cache --> Input: cached payload
   Input -> App: apply cached result

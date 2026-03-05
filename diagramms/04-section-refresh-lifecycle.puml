@@ -16,12 +16,20 @@ elseif (Services list)
   :Submit services_list job;
   :Maybe load selected service detail;
 elseif (Services instances)
-  :Submit service_detail for current service;
+  if (Single service context?) then (yes)
+    :Submit service_detail for current service;
+  else (bulk selection)
+    :Submit service_detail for each selected service;
+  endif
 elseif (Nodes list)
   :Submit nodes_list job;
   :Maybe load selected node detail;
 elseif (Nodes instances)
-  :Submit node_detail for current node;
+  if (Single node context?) then (yes)
+    :Submit node_detail for current node;
+  else (bulk selection)
+    :Submit node_detail for each selected node;
+  endif
 elseif (KV)
   :Submit kv_list job;
   :Maybe load selected KV detail;

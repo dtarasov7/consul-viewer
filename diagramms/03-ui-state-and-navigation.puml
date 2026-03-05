@@ -9,6 +9,7 @@ state "Section Mode" as Mode
 state "Selection" as Selection
 state "History Stack" as History
 state "Filters" as Filters
+state "Bulk Selection" as Bulk
 state "Sort Option" as Sort
 state "Popup State" as Popup
 
@@ -18,27 +19,33 @@ state "Popup State" as Popup
 [*] --> Selection
 [*] --> History
 [*] --> Filters
+[*] --> Bulk
 [*] --> Sort
 [*] --> Popup
 
 Section --> Mode : list / instances / links
 Section --> Selection : selected row id
 Section --> Filters : text + status + instance filters
+Section --> Bulk : selected services/nodes in list mode
 Section --> Sort : per-view sorting
 
 Focus --> Section : Tab / Shift+Tab
 Focus --> Selection : Up / Down
-Focus --> Popup : F1 / F6 / F7 / F8 / F9 / F11 / exit
+Focus --> Popup : F1 / F6 / F7 / F8 / F9 / F11 / F12 / exit
+Focus --> Bulk : Space toggle in services/nodes list
 
-Selection --> Mode : Enter drill-down
+Selection --> Mode : Enter drill-down or open merged instances
 Mode --> History : push previous location
 History --> Section : Backspace restore
 Popup --> Filters : apply popup filters
+Popup --> Bulk : apply regex bulk selection
 Popup --> Sort : apply sort settings
 
 note right of Filters
-Text, status, and structured
-instance filters are layered.
+Filters are layered:
+text (or instance text fields),
+status, then structured
+instance filters.
 end note
 
 note right of Sort

@@ -1,8 +1,8 @@
 # Consul Viewer TUI
 
-[![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version 1.0.0](https://img.shields.io/badge/version-1.0.0-blue.svg)](./CHANGELOG.md)
+[![Version 1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](./CHANGELOG.md)
 
 ![consul-viewer screenshot](images/consul-viewer1.png)
 ![consul-viewer screenshot](images/consul-viewer2.png)
@@ -26,23 +26,24 @@ The application is implemented as a single Python file and is designed for opera
   - Roles
   - Auth Methods
 - Layered filtering:
-  - text filter
+  - text filter (`Services`: name only; `Instances`: `Instance`/`Service`/`Address` with `AND/OR`)
   - status filter
   - structured instance filter by tags and metadata
+- Bulk selection in `Services` and `Nodes` lists (`Space` and regex mask with `F12`) with merged instance opening
 - Per-view sorting
 - Background loading, TTL cache, stale state handling
 
 ## Requirements
 
-- Python 3.9+
-- `urwid`
+- Python 3.8+
+- `urwid` (`>=2.0.1,<3.0`)
 
 ## Installation
 
 Install the only external dependency:
 
 ```bash
-pip install urwid
+pip install "urwid>=2.0.1,<3.0"
 ```
 
 ## Usage
@@ -82,17 +83,19 @@ Supported environment variables:
 
 - `Tab` / `Shift+Tab` / `Ctrl+Tab` - switch sections
 - `Left` / `Right` - switch between `Items` and `Details`
-- `Enter` - drill down into the selected object
+- `Enter` - drill down into the selected object (or open merged instances for selected services/nodes)
 - `Backspace` - go back
+- `Space` - toggle selection in `Services` / `Nodes` list mode
 - `F1` - help
 - `F3` - full viewer
 - `F4` - show token `SecretID`
 - `F5` - refresh current section
 - `F6` - status filter
-- `F7` or `/` - text filter
+- `F7` or `/` - text filter (`Services`: name; `Instances`: `Instance`/`Service`/`Address` + `AND/OR`)
 - `F8` - choose which filters to clear
 - `F9` - structured instance filter
 - `F11` - sorting
+- `F12` - select services/nodes by regex mask
 - `F10` / `Esc` - exit confirmation
 
 ## Key Files

@@ -18,7 +18,7 @@ from typing import Any, Callable, Optional
 
 import urwid
 
-__version__="1.0.0"
+__version__="1.1.0"
 __author__ = "Tarasov Dmitry"
 
 
@@ -187,6 +187,12 @@ def safe_json(data: Any) -> str:
 
 def now_hms() -> str:
     return time.strftime("%H:%M:%S")
+
+
+def normalize_display_text(value: Any) -> str:
+    """Normalize text for terminal widgets (tabs look broken in some urwid/terminal combos)."""
+
+    return str(value).expandtabs(4)
 
 
 class ConsulClient:
@@ -503,6 +509,80 @@ class InputDialog(urwid.WidgetWrap):
         return super().keypress(size, key)
 
 
+class InstanceTextFilterDialog(urwid.WidgetWrap):
+    """Dialog for F7 text filtering in instance lists by service/address with AND/OR logic."""
+
+    def __init__(
+        self,
+        initial: dict[str, Any],
+        on_submit: Callable[[dict[str, Any]], None],
+        on_cancel: Callable[[], None],
+    ) -> None:
+        self._on_submit = on_submit
+        self._on_cancel = on_cancel
+        self.instance_edit = urwid.Edit(edit_text=str(initial.get("instance", "")))
+        self.service_edit = urwid.Edit(edit_text=str(initial.get("service", "")))
+        self.address_edit = urwid.Edit(edit_text=str(initial.get("address", "")))
+        mode = str(initial.get("mode", "and")).strip().lower()
+        group: list[urwid.RadioButton] = []
+        self.and_button = urwid.RadioButton(group, "AND", state=mode != "or")
+        self.or_button = urwid.RadioButton(group, "OR", state=mode == "or")
+        items: list[urwid.Widget] = [
+            urwid.Text("Text filter for instance lists (substring match, case-insensitive).", align="left"),
+            urwid.Divider(),
+            urwid.Columns(
+                [
+                    ("weight", 3, urwid.Text("Instance:")),
+                    ("weight", 7, urwid.AttrMap(self.instance_edit, "popup_body")),
+                ],
+                dividechars=1,
+            ),
+            urwid.Columns(
+                [
+                    ("weight", 3, urwid.Text("Service:")),
+                    ("weight", 7, urwid.AttrMap(self.service_edit, "popup_body")),
+                ],
+                dividechars=1,
+            ),
+            urwid.Columns(
+                [
+                    ("weight", 3, urwid.Text("Address:")),
+                    ("weight", 7, urwid.AttrMap(self.address_edit, "popup_body")),
+                ],
+                dividechars=1,
+            ),
+            urwid.Divider(),
+            urwid.Text("Combine fields:", align="left"),
+            self.and_button,
+            self.or_button,
+        ]
+        walker = urwid.SimpleFocusListWalker(items)
+        body = urwid.ListBox(walker)
+        frame = urwid.Frame(
+            body=urwid.AttrMap(body, "popup_body"),
+            header=urwid.AttrMap(urwid.Text("Instance Text Filter", align="center"), "popup_title"),
+            footer=urwid.AttrMap(urwid.Text("Enter: apply  Esc/F10: cancel", align="center"), "popup_footer"),
+        )
+        super().__init__(urwid.AttrMap(urwid.LineBox(frame), "popup_border"))
+
+    def value(self) -> dict[str, Any]:
+        return {
+            "instance": self.instance_edit.edit_text.strip(),
+            "service": self.service_edit.edit_text.strip(),
+            "address": self.address_edit.edit_text.strip(),
+            "mode": "or" if self.or_button.get_state() else "and",
+        }
+
+    def keypress(self, size: tuple[int, int], key: str) -> Optional[str]:
+        if key == "enter":
+            self._on_submit(self.value())
+            return None
+        if key in {"esc", "f10"}:
+            self._on_cancel()
+            return None
+        return super().keypress(size, key)
+
+
 class StatusFilterDialog(urwid.WidgetWrap):
     """Checkbox dialog for the OR-based health status filter."""
 
@@ -786,6 +866,8 @@ class ConsulTuiApp:
         self.acl_message = "ACL availability is being probed"
         self.section_filters = {key: "" for key, _, _ in MENU_ITEMS}
         self.status_filters: dict[str, set[str]] = {"services": set(), "nodes": set(), "instances": set()}
+        self.bulk_selected: dict[str, set[str]] = {"services": set(), "nodes": set()}
+        self.instance_text_filter = self._empty_instance_text_filter()
         self.instance_filter = self._empty_instance_filter()
         self.sort_options: dict[str, dict[str, Any]] = {}
         self.section_modes = {
@@ -815,8 +897,8 @@ class ConsulTuiApp:
         self.section_meta: dict[str, Any] = {
             "dashboard": {},
             "telemetry": {},
-            "services": {"health_cache": {}, "list_rows": [], "pending_open": None},
-            "nodes": {"health_cache": {}, "list_rows": [], "pending_open": None},
+            "services": {"health_cache": {}, "list_rows": [], "pending_open": None, "pending_open_many": None},
+            "nodes": {"health_cache": {}, "list_rows": [], "pending_open": None, "pending_open_many": None},
             "kv": {},
             "sessions": {},
             "tokens": {"raw_rows": [], "list_rows": []},
@@ -832,8 +914,10 @@ class ConsulTuiApp:
         self.details_list = urwid.ListBox(self.details_walker)
         self.content_panel = urwid.AttrMap(urwid.Pile([("pack", self.list_header), self.content_list]), "panel_fill")
         self.details_panel = urwid.AttrMap(self.details_list, "panel_fill")
-        self.content_linebox = urwid.LineBox(self.content_panel, title="Items", title_attr="panel_title")
-        self.details_linebox = urwid.LineBox(self.details_panel, title="Details", title_attr="panel_title")
+        # `title_attr` is not available in older urwid releases (for example 2.0.1).
+        # Title colors are applied via AttrMap maps for the `title` part instead.
+        self.content_linebox = urwid.LineBox(self.content_panel, title="Items")
+        self.details_linebox = urwid.LineBox(self.details_panel, title="Details")
         self.content_box = urwid.AttrMap(self.content_linebox, self._panel_attr_map(), self._panel_focus_map())
         self.details_box = urwid.AttrMap(self.details_linebox, self._panel_attr_map(), self._panel_focus_map())
         self.header_text = urwid.Text("")
@@ -1996,17 +2080,27 @@ class ConsulTuiApp:
                 self._submit_job("services_list", ttl=CACHE_TTL_SHORT, force=force)
                 self._maybe_load_current_detail(force=force)
             else:
-                service_name = self.section_context["services"].get("service")
-                if service_name:
-                    self._submit_job("service_detail", args=(service_name,), ttl=CACHE_TTL_SHORT, force=force)
+                service_names = self.section_context["services"].get("services") or []
+                if service_names:
+                    for service_name in service_names:
+                        self._submit_job("service_detail", args=(service_name,), ttl=CACHE_TTL_SHORT, force=force)
+                else:
+                    service_name = self.section_context["services"].get("service")
+                    if service_name:
+                        self._submit_job("service_detail", args=(service_name,), ttl=CACHE_TTL_SHORT, force=force)
         elif section == "nodes":
             if self._current_mode("nodes") == "list":
                 self._submit_job("nodes_list", ttl=CACHE_TTL_SHORT, force=force)
                 self._maybe_load_current_detail(force=force)
             else:
-                node_name = self.section_context["nodes"].get("node")
-                if node_name:
-                    self._submit_job("node_detail", args=(node_name,), ttl=CACHE_TTL_SHORT, force=force)
+                node_names = self.section_context["nodes"].get("nodes") or []
+                if node_names:
+                    for node_name in node_names:
+                        self._submit_job("node_detail", args=(node_name,), ttl=CACHE_TTL_SHORT, force=force)
+                else:
+                    node_name = self.section_context["nodes"].get("node")
+                    if node_name:
+                        self._submit_job("node_detail", args=(node_name,), ttl=CACHE_TTL_SHORT, force=force)
         elif section == "kv":
             self._submit_job("kv_list", args=(self.kv_prefix,), ttl=CACHE_TTL_SHORT, force=force)
             self._maybe_load_current_detail(force=force)
@@ -2110,6 +2204,7 @@ class ConsulTuiApp:
             return
         if result.name == "services_list":
             self.section_meta["services"]["list_rows"] = list(result.payload)
+            self._sync_bulk_selected("services")
             if self._current_mode("services") == "list":
                 self.section_rows["services"] = result.payload
             self.section_stale["services"] = False
@@ -2129,6 +2224,30 @@ class ConsulTuiApp:
             if self._current_mode("services") == "instances" and self.section_context["services"].get("service") == service_name:
                 self.section_rows["services"] = result.payload.get("instances", [])
                 self._preserve_selection("services")
+            bulk_services = self.section_context["services"].get("services") or []
+            if self._current_mode("services") == "instances" and service_name in bulk_services:
+                merged_rows: list[dict[str, Any]] = []
+                for name in bulk_services:
+                    detail = self.section_details["services"].get(name)
+                    if detail:
+                        merged_rows.extend(detail.get("instances", []))
+                merged_rows.sort(
+                    key=lambda row: (
+                        str(row.get("service", "")).lower(),
+                        str(row.get("node", "")).lower(),
+                        str(row.get("name", "")).lower(),
+                        str(row.get("address", "")).lower(),
+                    )
+                )
+                self.section_rows["services"] = merged_rows
+                self.section_selected["services"] = self.section_selected.get("services") or (merged_rows[0]["id"] if merged_rows else None)
+                self._preserve_selection("services")
+                pending_many = self.section_meta["services"].get("pending_open_many") or []
+                if pending_many and all(name in self.section_details["services"] for name in pending_many):
+                    self.section_meta["services"]["pending_open_many"] = None
+                    self.section_loading["services"] = False
+                elif pending_many:
+                    self.section_loading["services"] = True
             if self.section_meta["services"].get("pending_open") == service_name:
                 self.section_meta["services"]["pending_open"] = None
                 self._open_service_instances(service_name)
@@ -2137,6 +2256,7 @@ class ConsulTuiApp:
             return
         if result.name == "nodes_list":
             self.section_meta["nodes"]["list_rows"] = list(result.payload)
+            self._sync_bulk_selected("nodes")
             if self._current_mode("nodes") == "list":
                 self.section_rows["nodes"] = result.payload
             self.section_stale["nodes"] = False
@@ -2155,6 +2275,30 @@ class ConsulTuiApp:
             if self._current_mode("nodes") == "instances" and self.section_context["nodes"].get("node") == node_name:
                 self.section_rows["nodes"] = result.payload.get("instances", [])
                 self._preserve_selection("nodes")
+            bulk_nodes = self.section_context["nodes"].get("nodes") or []
+            if self._current_mode("nodes") == "instances" and node_name in bulk_nodes:
+                merged_rows: list[dict[str, Any]] = []
+                for name in bulk_nodes:
+                    detail = self.section_details["nodes"].get(name)
+                    if detail:
+                        merged_rows.extend(detail.get("instances", []))
+                merged_rows.sort(
+                    key=lambda row: (
+                        str(row.get("node", "")).lower(),
+                        str(row.get("service", "")).lower(),
+                        str(row.get("name", "")).lower(),
+                        str(row.get("address", "")).lower(),
+                    )
+                )
+                self.section_rows["nodes"] = merged_rows
+                self.section_selected["nodes"] = self.section_selected.get("nodes") or (merged_rows[0]["id"] if merged_rows else None)
+                self._preserve_selection("nodes")
+                pending_many = self.section_meta["nodes"].get("pending_open_many") or []
+                if pending_many and all(name in self.section_details["nodes"] for name in pending_many):
+                    self.section_meta["nodes"]["pending_open_many"] = None
+                    self.section_loading["nodes"] = False
+                elif pending_many:
+                    self.section_loading["nodes"] = True
             if self.section_meta["nodes"].get("pending_open") == node_name:
                 self.section_meta["nodes"]["pending_open"] = None
                 self._open_node_instances(node_name)
@@ -2290,6 +2434,67 @@ class ConsulTuiApp:
         for row in rows:
             self._submit_job("service_detail", args=(row["id"],), ttl=CACHE_TTL_MEDIUM, force=force)
 
+    def _markable_section(self, section: Optional[str] = None) -> bool:
+        target = section or self.current_section
+        return target in {"services", "nodes"} and self._current_mode(target) == "list"
+
+    def _sync_bulk_selected(self, section: str) -> None:
+        if section not in self.bulk_selected:
+            return
+        list_rows = self.section_meta.get(section, {}).get("list_rows", [])
+        valid_ids = {row.get("id") for row in list_rows if row.get("id")}
+        self.bulk_selected[section].intersection_update(valid_ids)
+
+    def _toggle_current_bulk_mark(self) -> None:
+        section = self.current_section
+        if not self._markable_section(section):
+            self._update_status("Selection by Space is available only in services/nodes list mode")
+            return
+        selected = self.section_selected.get(section)
+        if not selected:
+            self._update_status("No row selected")
+            return
+        marked = self.bulk_selected[section]
+        if selected in marked:
+            marked.remove(selected)
+        else:
+            marked.add(selected)
+        self._preserve_selection(section)
+        self._update_status(f"Selected {len(marked)} {section}")
+        self._refresh_screen()
+
+    def _marked_ids(self, section: str) -> list[str]:
+        self._sync_bulk_selected(section)
+        return sorted(self.bulk_selected.get(section, set()))
+
+    def _apply_bulk_selection_regex(self, pattern: str) -> None:
+        section = self.current_section
+        if not self._markable_section(section):
+            self._update_status("Regex selection is available only in services/nodes list mode")
+            return
+        text = pattern.strip()
+        if not text:
+            self.bulk_selected[section].clear()
+            self._close_popup()
+            self._update_status(f"Selection cleared for {section}")
+            self._refresh_screen()
+            return
+        try:
+            compiled = re.compile(text, re.IGNORECASE)
+        except re.error as exc:
+            self._update_status(f"Invalid regex: {exc}")
+            return
+        matched = {
+            row["id"]
+            for row in self._filtered_rows(section)
+            if compiled.search(str(row.get("name", "")))
+        }
+        self.bulk_selected[section] = matched
+        self._close_popup()
+        self._preserve_selection(section)
+        self._update_status(f"Selected {len(matched)} {section} by regex")
+        self._refresh_screen()
+
     def _current_mode(self, section: str) -> str:
         return self.section_modes.get(section, "list")
 
@@ -2411,6 +2616,7 @@ class ConsulTuiApp:
             self._submit_job("service_detail", args=(service_name,), ttl=CACHE_TTL_MEDIUM, force=True)
             self._update_status(f"Loading instances for service: {service_name}")
             return
+        self.section_meta["services"]["pending_open_many"] = None
         self.section_modes["services"] = "instances"
         self.section_context["services"] = {"service": service_name}
         self.section_rows["services"] = detail.get("instances", [])
@@ -2419,12 +2625,49 @@ class ConsulTuiApp:
         self._update_status(f"Instances for service: {service_name}")
         self._refresh_screen()
 
+    def _open_service_instances_many(self, service_names: list[str]) -> None:
+        targets = sorted({name for name in service_names if name})
+        if not targets:
+            self._update_status("No services selected")
+            return
+        self.section_meta["services"]["pending_open"] = None
+        self.section_modes["services"] = "instances"
+        self.section_context["services"] = {"services": targets}
+        rows: list[dict[str, Any]] = []
+        missing: list[str] = []
+        for service_name in targets:
+            detail = self.section_details["services"].get(service_name)
+            if detail:
+                rows.extend(detail.get("instances", []))
+            else:
+                missing.append(service_name)
+                self._submit_job("service_detail", args=(service_name,), ttl=CACHE_TTL_MEDIUM, force=True)
+        rows.sort(
+            key=lambda row: (
+                str(row.get("service", "")).lower(),
+                str(row.get("node", "")).lower(),
+                str(row.get("name", "")).lower(),
+                str(row.get("address", "")).lower(),
+            )
+        )
+        self.section_rows["services"] = rows
+        self.section_selected["services"] = rows[0]["id"] if rows else None
+        self.section_meta["services"]["pending_open_many"] = list(targets) if missing else None
+        self.section_loading["services"] = bool(missing)
+        if missing:
+            self._update_status(f"Loading instances for selected services: {len(targets)} ({len(missing)} pending)")
+        else:
+            self._update_status(f"Instances for selected services: {len(targets)}")
+        self._refresh_screen()
+
     def _close_service_instances(self) -> None:
         service_name = self.section_context["services"].get("service")
+        service_names = self.section_context["services"].get("services") or []
         self.section_modes["services"] = "list"
         self.section_context["services"] = {}
         self.section_rows["services"] = list(self.section_meta["services"].get("list_rows", []))
-        self.section_selected["services"] = service_name
+        self.section_meta["services"]["pending_open_many"] = None
+        self.section_selected["services"] = service_name or (service_names[0] if service_names else None)
         self._preserve_selection("services")
         self._update_status("Back to services")
         self.refresh_current(force=False)
@@ -2436,6 +2679,7 @@ class ConsulTuiApp:
             self._submit_job("node_detail", args=(node_name,), ttl=CACHE_TTL_MEDIUM, force=True)
             self._update_status(f"Loading instances for node: {node_name}")
             return
+        self.section_meta["nodes"]["pending_open_many"] = None
         self.section_modes["nodes"] = "instances"
         self.section_context["nodes"] = {"node": node_name}
         self.section_rows["nodes"] = detail.get("instances", [])
@@ -2444,12 +2688,49 @@ class ConsulTuiApp:
         self._update_status(f"Instances on node: {node_name}")
         self._refresh_screen()
 
+    def _open_node_instances_many(self, node_names: list[str]) -> None:
+        targets = sorted({name for name in node_names if name})
+        if not targets:
+            self._update_status("No nodes selected")
+            return
+        self.section_meta["nodes"]["pending_open"] = None
+        self.section_modes["nodes"] = "instances"
+        self.section_context["nodes"] = {"nodes": targets}
+        rows: list[dict[str, Any]] = []
+        missing: list[str] = []
+        for node_name in targets:
+            detail = self.section_details["nodes"].get(node_name)
+            if detail:
+                rows.extend(detail.get("instances", []))
+            else:
+                missing.append(node_name)
+                self._submit_job("node_detail", args=(node_name,), ttl=CACHE_TTL_MEDIUM, force=True)
+        rows.sort(
+            key=lambda row: (
+                str(row.get("node", "")).lower(),
+                str(row.get("service", "")).lower(),
+                str(row.get("name", "")).lower(),
+                str(row.get("address", "")).lower(),
+            )
+        )
+        self.section_rows["nodes"] = rows
+        self.section_selected["nodes"] = rows[0]["id"] if rows else None
+        self.section_meta["nodes"]["pending_open_many"] = list(targets) if missing else None
+        self.section_loading["nodes"] = bool(missing)
+        if missing:
+            self._update_status(f"Loading instances for selected nodes: {len(targets)} ({len(missing)} pending)")
+        else:
+            self._update_status(f"Instances for selected nodes: {len(targets)}")
+        self._refresh_screen()
+
     def _close_node_instances(self) -> None:
         node_name = self.section_context["nodes"].get("node")
+        node_names = self.section_context["nodes"].get("nodes") or []
         self.section_modes["nodes"] = "list"
         self.section_context["nodes"] = {}
         self.section_rows["nodes"] = list(self.section_meta["nodes"].get("list_rows", []))
-        self.section_selected["nodes"] = node_name
+        self.section_meta["nodes"]["pending_open_many"] = None
+        self.section_selected["nodes"] = node_name or (node_names[0] if node_names else None)
         self._preserve_selection("nodes")
         self._update_status("Back to nodes")
         self.refresh_current(force=False)
@@ -2460,6 +2741,7 @@ class ConsulTuiApp:
             self.section_modes["services"] = "list"
             self.section_context["services"] = {}
             self.section_rows["services"] = list(self.section_meta["services"].get("list_rows", []))
+            self.section_meta["services"]["pending_open_many"] = None
             if service_name:
                 self.section_selected["services"] = service_name
             self._preserve_selection("services")
@@ -2469,6 +2751,7 @@ class ConsulTuiApp:
             self.section_modes["nodes"] = "list"
             self.section_context["nodes"] = {}
             self.section_rows["nodes"] = list(self.section_meta["nodes"].get("list_rows", []))
+            self.section_meta["nodes"]["pending_open_many"] = None
             if node_name:
                 self.section_selected["nodes"] = node_name
             self._preserve_selection("nodes")
@@ -2556,14 +2839,16 @@ class ConsulTuiApp:
         """
         rows = list(self.section_rows.get(section, []))
         filter_text = self.section_filters.get(section, "").strip().lower()
+        if self._is_instance_list(section):
+            filter_text = ""
         filtered = rows
         if filter_text:
-            if section == "services" and self._current_mode("services") == "instances" and filter_text.startswith("="):
-                filtered = rows
-            elif section == "services" and filter_text.startswith("="):
+            if section == "services" and filter_text.startswith("="):
                 exact_name = filter_text[1:].strip()
                 if exact_name:
                     filtered = [row for row in rows if str(row.get("name", "")).lower() == exact_name]
+            elif section == "services" and self._current_mode("services") == "list":
+                filtered = [row for row in rows if filter_text in str(row.get("name", "")).lower()]
             else:
                 matched: list[dict[str, Any]] = []
                 for row in rows:
@@ -2571,6 +2856,8 @@ class ConsulTuiApp:
                     if filter_text in blob:
                         matched.append(row)
                 filtered = matched
+        if self._is_instance_list(section) and self._instance_text_filter_active():
+            filtered = [row for row in filtered if self._row_matches_instance_text_filter(row)]
         status_scope = self._status_filter_scope(section)
         selected_statuses = self.status_filters.get(status_scope or "", set())
         # Filters are layered: text -> status -> structured instance filter -> sort.
@@ -2579,6 +2866,36 @@ class ConsulTuiApp:
         if self._is_instance_list(section) and self._instance_filter_active():
             filtered = [row for row in filtered if self._row_matches_instance_filter(row)]
         return self._sort_rows(section, filtered)
+
+    def _empty_instance_text_filter(self) -> dict[str, str]:
+        return {"instance": "", "service": "", "address": "", "mode": "and"}
+
+    def _instance_text_filter_active(self) -> bool:
+        spec = self.instance_text_filter
+        return bool(
+            str(spec.get("instance", "")).strip()
+            or str(spec.get("service", "")).strip()
+            or str(spec.get("address", "")).strip()
+        )
+
+    def _row_matches_instance_text_filter(self, row: dict[str, Any]) -> bool:
+        spec = self.instance_text_filter
+        instance_pattern = str(spec.get("instance", "")).strip().lower()
+        service_pattern = str(spec.get("service", "")).strip().lower()
+        address_pattern = str(spec.get("address", "")).strip().lower()
+        mode = str(spec.get("mode", "and")).strip().lower()
+        checks: list[bool] = []
+        if instance_pattern:
+            checks.append(instance_pattern in str(row.get("name", "")).lower())
+        if service_pattern:
+            checks.append(service_pattern in str(row.get("service", "")).lower())
+        if address_pattern:
+            checks.append(address_pattern in str(row.get("address", "")).lower())
+        if not checks:
+            return True
+        if mode == "or":
+            return any(checks)
+        return all(checks)
 
     def _empty_instance_filter(self) -> dict[str, Any]:
         return {
@@ -2846,6 +3163,28 @@ class ConsulTuiApp:
             return text
         return text[:45] + "..."
 
+    def _instance_text_filter_summary(self) -> str:
+        spec = self.instance_text_filter
+        instance = str(spec.get("instance", "")).strip()
+        service = str(spec.get("service", "")).strip()
+        address = str(spec.get("address", "")).strip()
+        mode = str(spec.get("mode", "and")).strip().upper()
+        if not instance and not service and not address:
+            return "-"
+        parts: list[str] = []
+        if instance:
+            parts.append(f"inst={instance}")
+        if service:
+            parts.append(f"svc={service}")
+        if address:
+            parts.append(f"addr={address}")
+        if len(parts) > 1:
+            parts.append(mode)
+        text = " ".join(parts)
+        if len(text) <= 48:
+            return text
+        return text[:45] + "..."
+
     def _row_status_bucket(self, row: dict[str, Any]) -> str:
         status = str(row.get("status") or "unknown").strip().lower()
         if status == "passing":
@@ -2911,7 +3250,10 @@ class ConsulTuiApp:
         loading = "loading" if self.section_loading.get(section) else "idle"
         stale = "stale" if self.section_stale.get(section) else "fresh"
         filter_text = self.section_filters.get(section, "")
-        extra = f" filter={filter_text!r}" if filter_text else ""
+        if self._is_instance_list(section):
+            extra = f" filter={self._instance_text_filter_summary()}" if self._instance_text_filter_active() else ""
+        else:
+            extra = f" filter={filter_text!r}" if filter_text else ""
         status_scope = self._status_filter_scope(section)
         status_values = self.status_filters.get(status_scope or "", set())
         status_extra = f" status={self._format_status_filter_values(status_values)}" if status_values else ""
@@ -2929,7 +3271,7 @@ class ConsulTuiApp:
 
     def _update_footer_keys(self) -> None:
         self.keys_text.set_text(
-            "Tab NextSec  Shift+Tab PrevSec  Left/Right Pane  0-9/T Section  F1 Help  F2 Auto  F3 View  F4 Secret  F5 Refresh  F6 Status  F7 Filter  F8 Clear  F9 Inst  F11 Sort  Backspace Back  F10 Exit"
+            "Tab NextSec  Shift+Tab PrevSec  Left/Right Pane  0-9/T Section  Space Mark  F12 MarkRe  F1 Help  F2 Auto  F3 View  F4 Secret  F5 Refresh  F6 Status  F7 Filter  F8 Clear  F9 Inst  F11 Sort  Backspace Back  F10 Exit"
         )
 
     def _panel_attr_map(self) -> dict[Optional[str], str]:
@@ -3052,12 +3394,12 @@ class ConsulTuiApp:
             self.list_header.set_text(("list_header", format_columns(["Metric", "Value", "Limit", "Use%", "State"], [18, 14, 14, 8, 8])))
         elif section == "services":
             if self._current_mode("services") == "list":
-                self.list_header.set_text(("list_header", format_columns(["Name", "Tags", "Inst", "Status"], [18, 26, 5, 10])))
+                self.list_header.set_text(("list_header", format_columns(["Sel", "Name", "Inst", "Status"], [3, 40, 5, 10])))
             else:
                 self.list_header.set_text(("list_header", format_columns(["Instance", "Address", "Port", "Status"], [28, 24, 6, 10])))
         elif section == "nodes":
             if self._current_mode("nodes") == "list":
-                self.list_header.set_text(("list_header", format_columns(["Node", "Address", "Status", "DC"], [18, 22, 10, 12])))
+                self.list_header.set_text(("list_header", format_columns(["Sel", "Node", "Address", "Status", "DC"], [3, 16, 22, 10, 12])))
             else:
                 self.list_header.set_text(("list_header", format_columns(["Instance", "Address", "Port", "Status"], [28, 24, 6, 10])))
         elif section == "kv":
@@ -3103,12 +3445,24 @@ class ConsulTuiApp:
         if self.current_section in {"tokens", "roles"} and self._current_mode(self.current_section) == "links":
             source_name = self.section_context[self.current_section].get("source_name", "")
             return f"{title} links: {source_name}" if source_name else f"{title} links"
+        if self.current_section in {"services", "nodes"} and self._current_mode(self.current_section) == "list":
+            marked_count = len(self._marked_ids(self.current_section))
+            if marked_count:
+                title += f" [{marked_count} selected]"
         if self.current_section == "services" and self._current_mode("services") == "instances":
-            service_name = self.section_context["services"].get("service", "")
-            title += f" / {service_name} / instances"
+            service_names = self.section_context["services"].get("services") or []
+            if service_names:
+                title += f" / {len(service_names)} selected / instances"
+            else:
+                service_name = self.section_context["services"].get("service", "")
+                title += f" / {service_name} / instances"
         if self.current_section == "nodes" and self._current_mode("nodes") == "instances":
-            node_name = self.section_context["nodes"].get("node", "")
-            title += f" / {node_name} / instances"
+            node_names = self.section_context["nodes"].get("nodes") or []
+            if node_names:
+                title += f" / {len(node_names)} selected / instances"
+            else:
+                node_name = self.section_context["nodes"].get("node", "")
+                title += f" / {node_name} / instances"
         if self.current_section == "kv":
             title += f" /{self.kv_prefix}" if self.kv_prefix else " /"
         return title
@@ -3126,14 +3480,15 @@ class ConsulTuiApp:
             if self._current_mode("services") == "instances":
                 line = format_columns([row["name"], row["address"], row["port"], row.get("status_count", "?/?")], [28, 24, 6, 10])
                 return line, status_attr(row.get("status", "unknown"))
-            tags = ",".join(row.get("tags", [])) or "-"
-            line = format_columns([row["name"], tags, row["instances"], row.get("status_count", "?/?")], [18, 26, 5, 10])
+            marker = "*" if row.get("id") in self.bulk_selected["services"] else ""
+            line = format_columns([marker, row["name"], row["instances"], row.get("status_count", "?/?")], [3, 40, 5, 10])
             return line, status_attr(row.get("status", "unknown"))
         if section == "nodes":
             if self._current_mode("nodes") == "instances":
                 line = format_columns([row["name"], row["address"], row["port"], row.get("status_count", "?/?")], [28, 24, 6, 10])
                 return line, status_attr(row.get("status", "unknown"))
-            line = format_columns([row["name"], row["address"], row.get("status_count", "?/?"), row.get("dc", "-")], [18, 22, 10, 12])
+            marker = "*" if row.get("id") in self.bulk_selected["nodes"] else ""
+            line = format_columns([marker, row["name"], row["address"], row.get("status_count", "?/?"), row.get("dc", "-")], [3, 16, 22, 10, 12])
             return line, status_attr(row.get("status", "unknown"))
         if section == "kv":
             kind = row.get("kind", "key")
@@ -3170,9 +3525,9 @@ class ConsulTuiApp:
         lines = self._current_detail_lines() or ["No details"]
         for line in lines:
             if isinstance(line, tuple) and len(line) == 2:
-                self.details_walker.append(urwid.Text((line[0], line[1])))
+                self.details_walker.append(urwid.Text((line[0], normalize_display_text(line[1]))))
             else:
-                self.details_walker.append(urwid.Text(("details_text", line)))
+                self.details_walker.append(urwid.Text(("details_text", normalize_display_text(line))))
         if self.details_walker:
             self.details_walker.set_focus(min(old_focus, len(self.details_walker) - 1))
         self.details_linebox.set_title(self._details_title())
@@ -3507,7 +3862,7 @@ class ConsulTuiApp:
             ]
             lines.append("Rules:")
             if rules:
-                lines.extend(rules.splitlines())
+                lines.extend(line.expandtabs(4) for line in rules.splitlines())
             elif not detail_loaded:
                 lines.append("Loading policy details...")
             else:
@@ -3696,13 +4051,21 @@ class ConsulTuiApp:
         self.section_selected[section] = item_id
         if section == "services":
             if self._current_mode("services") == "list":
-                self._open_service_instances(item_id)
+                marked = self._marked_ids("services")
+                if marked:
+                    self._open_service_instances_many(marked)
+                else:
+                    self._open_service_instances(item_id)
                 return
             self._refresh_screen()
             return
         if section == "nodes":
             if self._current_mode("nodes") == "list":
-                self._open_node_instances(item_id)
+                marked = self._marked_ids("nodes")
+                if marked:
+                    self._open_node_instances_many(marked)
+                else:
+                    self._open_node_instances(item_id)
                 return
             row = self._find_row_by_id("nodes", item_id)
             if row and row.get("service") and row.get("service") != "-":
@@ -3831,13 +4194,15 @@ class ConsulTuiApp:
                 "Backspace      go back / close instances / parent KV prefix",
                 "Ctrl+N         jump from selected instance to node",
                 "Alt+S          jump from selected instance to service",
+                "Space          toggle selection (services/nodes list mode)",
+                "F12            select services/nodes by regex mask",
                 "F1             help",
                 "F2             toggle auto refresh",
                 "F3             open full viewer (JSON/value/details)",
                 "F4             show SecretID for selected token",
                 "F5             refresh current section",
                 "F6             set status filter (services/nodes/instances)",
-                "F7 or /        set text filter",
+                "F7 or /        set text filter (services: name, instances: service/address + AND/OR)",
                 "F8             choose which filters to clear",
                 "F9             set instance tag/meta filter (instance lists only)",
                 "F11            set sort field and direction",
@@ -3858,14 +4223,36 @@ class ConsulTuiApp:
         self._show_popup(dialog, width=110, height=28)
 
     def _show_filter_dialog(self) -> None:
+        if self._is_instance_list():
+            dialog = InstanceTextFilterDialog(
+                initial=dict(self.instance_text_filter),
+                on_submit=self._apply_instance_text_filter_from_dialog,
+                on_cancel=self._close_popup,
+            )
+            self._show_popup(dialog, width=82, height=15)
+            return
+        is_services_list = self.current_section == "services" and self._current_mode("services") == "list"
         dialog = InputDialog(
-            title=f"Filter: {self._section_label(self.current_section)}",
-            caption="filter> ",
+            title=f"Filter: {self._section_label(self.current_section)}" if not is_services_list else "Filter: Services (name)",
+            caption="filter> " if not is_services_list else "service> ",
             initial_text=self.section_filters.get(self.current_section, ""),
             on_submit=self._apply_filter_from_dialog,
             on_cancel=self._close_popup,
         )
         self._show_popup(dialog, width=70, height=8)
+
+    def _show_bulk_selection_regex_dialog(self) -> None:
+        if not self._markable_section():
+            self._update_status("Regex selection is available only in services/nodes list mode")
+            return
+        dialog = InputDialog(
+            title=f"Select by Regex: {self._section_label(self.current_section)}",
+            caption="regex> ",
+            initial_text="",
+            on_submit=self._apply_bulk_selection_regex,
+            on_cancel=self._close_popup,
+        )
+        self._show_popup(dialog, width=72, height=8)
 
     def _show_status_filter_dialog(self) -> None:
         scope = self._status_filter_scope()
@@ -3929,6 +4316,21 @@ class ConsulTuiApp:
         self._update_status(f"Filter updated for {self.current_section}")
         self._refresh_screen()
 
+    def _apply_instance_text_filter_from_dialog(self, value: dict[str, Any]) -> None:
+        self.instance_text_filter = {
+            "instance": str(value.get("instance", "")).strip(),
+            "service": str(value.get("service", "")).strip(),
+            "address": str(value.get("address", "")).strip(),
+            "mode": "or" if str(value.get("mode", "and")).strip().lower() == "or" else "and",
+        }
+        self._close_popup()
+        self._preserve_selection(self.current_section)
+        if self._instance_text_filter_active():
+            self._update_status(f"Instance text filter updated: {self._instance_text_filter_summary()}")
+        else:
+            self._update_status("Instance text filter cleared")
+        self._refresh_screen()
+
     def _apply_status_filter_from_dialog(self, scope: str, selected: set[str]) -> None:
         self.status_filters[scope] = set(selected)
         self._close_popup()
@@ -3988,7 +4390,10 @@ class ConsulTuiApp:
         status_scope = self._status_filter_scope()
         cleared: list[str] = []
         if "text" in selected:
-            self.section_filters[self.current_section] = ""
+            if self._is_instance_list():
+                self.instance_text_filter = self._empty_instance_text_filter()
+            else:
+                self.section_filters[self.current_section] = ""
             cleared.append("text")
         if "status" in selected and status_scope:
             self.status_filters[status_scope] = set()
@@ -4058,6 +4463,12 @@ class ConsulTuiApp:
             return
         if key == "f6":
             self._show_status_filter_dialog()
+            return
+        if key == " ":
+            self._toggle_current_bulk_mark()
+            return
+        if key in {"f12", "meta m"}:
+            self._show_bulk_selection_regex_dialog()
             return
         if key in {"f7", "/"}:
             self._show_filter_dialog()

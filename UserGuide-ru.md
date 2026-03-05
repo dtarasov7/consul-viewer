@@ -136,6 +136,14 @@ python consul-viewer.py --refresh 10 --timeout 15
 
 `Enter` на сервисе открывает список его инстансов.
 
+Для массовых операций в списке `Services`:
+
+- `Space` переключает выделение текущего сервиса;
+- `F12` открывает выбор сервисов по regex-маске;
+- `Enter` открывает объединённый список инстансов для всех выделенных сервисов.
+
+Если выделения нет, `Enter` открывает инстансы только текущего сервиса.
+
 ### 4.4 Services / Instances
 
 В режиме инстансов показывается список инстансов выбранного сервиса:
@@ -182,6 +190,14 @@ python consul-viewer.py --refresh 10 --timeout 15
 - service checks.
 
 `Enter` на ноде открывает список инстансов, зарегистрированных на этой ноде.
+
+Для массовых операций в списке `Nodes`:
+
+- `Space` переключает выделение текущей ноды;
+- `F12` открывает выбор нод по regex-маске;
+- `Enter` открывает объединённый список инстансов для всех выделенных нод.
+
+Если выделения нет, `Enter` открывает инстансы только текущей ноды.
 
 ### 4.6 Nodes / Instances
 
@@ -349,15 +365,25 @@ python consul-viewer.py --refresh 10 --timeout 15
 - `Up` / `Down` — перемещение по строкам списка
 - `PgUp` / `PgDn`, `Home`, `End` — стандартное поведение `urwid` для длинных списков
 
-### 5.4 Drill-down и возврат
+### 5.4 Мультивыделение в Services и Nodes
+
+- `Space` — выделить/снять выделение текущей строки
+- `F12` — открыть диалог выбора по regex-маске
+- `Enter` — в режиме списка открыть объединённые инстансы выделенных строк
+
+Работает только в режиме списка `Services` и `Nodes`.
+
+### 5.5 Drill-down и возврат
 
 - `Enter` — открыть выбранный объект или перейти глубже
 - `Backspace` — вернуться назад
 
 Типовые сценарии:
 
-- `Services -> Enter` — открыть инстансы сервиса
-- `Nodes -> Enter` — открыть инстансы ноды
+- `Services (selected) -> Enter` — открыть объединённые инстансы выделенных сервисов
+- `Nodes (selected) -> Enter` — открыть объединённые инстансы выделенных нод
+- `Services (focused, no selection) -> Enter` — открыть инстансы сервиса
+- `Nodes (focused, no selection) -> Enter` — открыть инстансы ноды
 - `Node Instance -> Enter` — перейти в `Services` с фильтром по соответствующему сервису
 - `Tokens -> Enter` — открыть связанные роли и policies
 - `Roles -> Enter` — открыть связанные policies
@@ -406,15 +432,19 @@ python consul-viewer.py --refresh 10 --timeout 15
 
 - `F7` или `/`
 
-Открывает popup для ввода текстового фильтра по текущему списку.
+Открывает popup текстового фильтра для текущего списка.
 
-Фильтр ищет подстроку по значениям строки.
+Поведение зависит от текущего вида:
+
+- список `Services`: фильтрация только по имени сервиса (substring);
+- списки инстансов (`Services / Instances`, `Nodes / Instances`): отдельные поля `Instance`, `Service`, `Address` и режим объединения `AND/OR`;
+- остальные списки: поиск подстроки по значениям строки.
 
 Специальный случай:
 
 - в `Services` используется внутренний exact-filter вида `=service-name` для перехода из `Node Instance -> Services`
 
-Этот exact-filter нужен для навигации и не должен ломать просмотр списка инстансов сервиса.
+Этот exact-filter нужен для навигации и не влияет на фильтрацию в списках инстансов.
 
 ### 7.2 Status Filter
 
@@ -658,6 +688,7 @@ python consul-viewer.py --refresh 10 --timeout 15
 - `Left` / `Right` — переключение между `Items` и `Details`
 - `Enter` — drill-down / открыть
 - `Backspace` — назад
+- `Space` — выделить/снять строку в списках `Services`/`Nodes`
 - `Ctrl+N` — перейти к ноде
 - `Alt+S` — перейти к сервису
 - `F1` — help
@@ -666,9 +697,9 @@ python consul-viewer.py --refresh 10 --timeout 15
 - `F4` — SecretID token
 - `F5` — refresh
 - `F6` — status filter
-- `F7` или `/` — text filter
+- `F7` или `/` — text filter (`Services`: name; `Instances`: `Instance`/`Service`/`Address` + `AND/OR`)
 - `F8` — clear filters dialog
 - `F9` — instance filter
 - `F11` — sort
+- `F12` — regex selection в списках `Services`/`Nodes`
 - `F10` / `Esc` — confirm exit / close popup
-

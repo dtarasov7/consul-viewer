@@ -123,9 +123,9 @@ Example: `Open FDs` is calculated from `process_open_fds / process_max_fds`.
 Shows the aggregated services list:
 
 - service name;
-- tags;
 - instance count;
 - `Status` as `N/M`, where `N` is the number of passing instances and `M` is the total instance count.
+- selection marker (`Sel`) for bulk operations.
 
 When a service is selected, `Details` shows:
 
@@ -134,11 +134,17 @@ When a service is selected, `Details` shows:
 - instance list;
 - checks for each instance.
 
-Press `Enter` on a service to open its instance list.
+Bulk actions in this view:
+
+- `Space` toggles selection for the focused service;
+- `F12` applies selection by regex mask;
+- `Enter` opens instances for all selected services.
+
+If nothing is selected, `Enter` opens instances for the focused service.
 
 ### 4.4 Services / Instances
 
-In instance mode, the list shows instances of the selected service:
+In instance mode, the list shows instances of the selected service (or merged instances of selected services):
 
 - instance ID;
 - address;
@@ -164,6 +170,7 @@ Shows the nodes list:
 - address;
 - datacenter;
 - `Status` as `N/M`, where `N` is the number of passing instances on the node and `M` is the total instance count on the node.
+- selection marker (`Sel`) for bulk operations.
 
 Important:
 
@@ -181,11 +188,17 @@ The `Details` pane shows:
 - node checks;
 - service checks.
 
-Press `Enter` on a node to open the list of instances registered on that node.
+Bulk actions in this view:
+
+- `Space` toggles selection for the focused node;
+- `F12` applies selection by regex mask;
+- `Enter` opens instances for all selected nodes.
+
+If nothing is selected, `Enter` opens instances for the focused node.
 
 ### 4.6 Nodes / Instances
 
-In node instance mode, the list shows:
+In node instance mode, the list shows instances of the selected node (or merged instances of selected nodes):
 
 - instance ID;
 - address;
@@ -345,15 +358,25 @@ Numbered sections:
 - `Up` / `Down` - move through list rows
 - `PgUp` / `PgDn`, `Home`, `End` - standard `urwid` behavior for long lists
 
-### 5.4 Drill-Down and Back Navigation
+### 5.4 Multi-Selection in Services and Nodes
+
+- `Space` - toggle selection marker for the focused row
+- `F12` - open regex dialog and select rows by mask
+- `Enter` - in list mode, opens merged instances for selected rows
+
+Selection works only in `Services` and `Nodes` list mode.
+
+### 5.5 Drill-Down and Back Navigation
 
 - `Enter` - open the selected object or drill down
 - `Backspace` - go back
 
 Typical flows:
 
-- `Services -> Enter` - open service instances
-- `Nodes -> Enter` - open node instances
+- `Services (selected) -> Enter` - open merged instances for selected services
+- `Nodes (selected) -> Enter` - open merged instances for selected nodes
+- `Services (focused, no selection) -> Enter` - open service instances
+- `Nodes (focused, no selection) -> Enter` - open node instances
 - `Node Instance -> Enter` - switch to filtered `Services`
 - `Tokens -> Enter` - open linked roles and policies
 - `Roles -> Enter` - open linked policies
@@ -402,15 +425,19 @@ Filters are applied in this order:
 
 - `F7` or `/`
 
-Opens a popup for entering a text filter for the current list.
+Opens a text-filter popup for the current list.
 
-The filter matches a substring across row values.
+Behavior by view:
+
+- `Services` list: filter by service name only (substring);
+- instance lists (`Services/Instances`, `Nodes/Instances`): dedicated fields `Instance`, `Service`, `Address` with `AND/OR` combination mode;
+- other lists: substring match across row values.
 
 Special case:
 
 - `Services` uses an internal exact filter like `=service-name` when navigating from `Node Instance -> Services`
 
-That exact filter is used for navigation and should not break service instance views.
+That exact filter is used for navigation and does not affect instance-list filtering.
 
 ### 7.2 Status Filter
 
@@ -653,6 +680,7 @@ For ACL:
 - `Left` / `Right` - switch between `Items` and `Details`
 - `Enter` - drill down / open
 - `Backspace` - back
+- `Space` - select/unselect row in `Services`/`Nodes` list
 - `Ctrl+N` - jump to node
 - `Alt+S` - jump to service
 - `F1` - help
@@ -661,9 +689,9 @@ For ACL:
 - `F4` - token `SecretID`
 - `F5` - refresh
 - `F6` - status filter
-- `F7` or `/` - text filter
+- `F7` or `/` - text filter (`Services`: name; `Instances`: `Instance`/`Service`/`Address` + `AND/OR`)
 - `F8` - clear filters dialog
 - `F9` - instance filter
 - `F11` - sort
+- `F12` - regex selection for `Services`/`Nodes` list
 - `F10` / `Esc` - confirm exit / close popup
-

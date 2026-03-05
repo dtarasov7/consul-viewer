@@ -19,6 +19,7 @@ package "Application Core" {
   [State Model]
   [Input Router]
   [Filter Layer]
+  [Bulk Selection Layer]
   [Sort Layer]
   [Render Pipeline]
 }
@@ -53,8 +54,10 @@ User --> [ConsulTuiApp]
 [Input Router] --> [State Model]
 [Input Router] --> [Job Queue]
 [Render Pipeline] --> [Filter Layer]
+[Render Pipeline] --> [Bulk Selection Layer]
 [Render Pipeline] --> [Sort Layer]
 [Render Pipeline] --> [State Model]
+[Bulk Selection Layer] --> [State Model]
 
 [Job Queue] --> [Worker Thread]
 [Worker Thread] --> [Result Queue]
